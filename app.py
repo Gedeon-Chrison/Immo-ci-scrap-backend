@@ -8,11 +8,37 @@ app = Flask(__name__)
 CORS(app)
 DB_PATH = os.environ.get("DB_PATH", "/tmp/immo.db")
 
-
 def init_db():
     conn = sqlite3.connect(DB_PATH)
-    conn.execute("CREATE TABLE IF NOT EXISTS annonces (id TEXT PRIMARY KEY, source TEXT, source_url TEXT, transaction TEXT, type_bien TEXT, zone TEXT, quartier TEXT, prix TEXT, prix_fcfa INTEGER DEFAULT 0, surface TEXT, pieces TEXT, contact TEXT, agence TEXT, description TEXT, url TEXT, photos TEXT DEFAULT '[]', publie_at TEXT, scraped_at TEXT, is_new INTEGER DEFAULT 0)")
-    conn.execute("CREATE TABLE IF NOT EXISTS scrape_jobs (id INTEGER PRIMARY KEY AUTOINCREMENT, started_at TEXT, finished_at TEXT, status TEXT, total INTEGER DEFAULT 0, config TEXT)")
+    conn.execute("""CREATE TABLE IF NOT EXISTS annonces (
+        id TEXT PRIMARY KEY,
+        source TEXT,
+        source_url TEXT,
+        tx_type TEXT,
+        type_bien TEXT,
+        zone TEXT,
+        quartier TEXT,
+        prix TEXT,
+        prix_fcfa INTEGER DEFAULT 0,
+        surface TEXT,
+        pieces TEXT,
+        contact TEXT,
+        agence TEXT,
+        description TEXT,
+        url TEXT,
+        photos TEXT DEFAULT '[]',
+        publie_at TEXT,
+        scraped_at TEXT,
+        is_new INTEGER DEFAULT 0
+    )""")
+    conn.execute("""CREATE TABLE IF NOT EXISTS scrape_jobs (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        started_at TEXT,
+        finished_at TEXT,
+        status TEXT,
+        total INTEGER DEFAULT 0,
+        config TEXT
+    )""")
     conn.commit()
     conn.close()
 
@@ -40,7 +66,7 @@ def get_annonces():
     sort = request.args.get("sort", "date")
     limit = min(int(request.args.get("limit", 200)), 500)
     if tx:
-        q += " AND transaction = ?"
+        q += " AND tx_type = ?"
         params.append(tx)
     if zone:
         q += " AND zone LIKE ?"
@@ -69,6 +95,7 @@ def get_annonces():
     annonces = []
     for r in rows:
         a = dict(r)
+        a["transaction"] = a.get("tx_type", "")
         try:
             a["photos"] = json.loads(a.get("photos") or "[]")
         except:
@@ -80,8 +107,8 @@ def get_annonces():
 def get_stats():
     conn = sqlite3.connect(DB_PATH)
     total = conn.execute("SELECT COUNT(*) FROM annonces").fetchone()[0]
-    ventes = conn.execute("SELECT COUNT(*) FROM annonces WHERE transaction='Vente'").fetchone()[0]
-    locations = conn.execute("SELECT COUNT(*) FROM annonces WHERE transaction='Location'").fetchone()[0]
+    ventes = conn.execute("SELECT COUNT(*) FROM annonces WHERE tx_type='Vente'").fetchone()[0]
+    locations = conn.execute("SELECT COUNT(*) FROM annonces WHERE tx_type='Location'").fetchone()[0]
     new_24h = conn.execute("SELECT COUNT(*) FROM annonces WHERE is_new=1").fetchone()[0]
     sources = conn.execute("SELECT source, COUNT(*) as cnt FROM annonces GROUP BY source ORDER BY cnt DESC").fetchall()
     zones = conn.execute("SELECT zone, COUNT(*) as cnt FROM annonces GROUP BY zone ORDER BY cnt DESC LIMIT 15").fetchall()
@@ -130,7 +157,7 @@ def export_csv():
     writer = csv.writer(si, delimiter=";")
     writer.writerow(["ID","Source","Transaction","Type","Zone","Quartier","Prix","Prix FCFA","Surface","Pieces","Contact","Description","URL","Scrape"])
     for r in rows:
-        writer.writerow([r["id"],r["source"],r["transaction"],r["type_bien"],r["zone"],r["quartier"],r["prix"],r["prix_fcfa"],r["surface"],r["pieces"],r["contact"],r["description"],r["url"],r["scraped_at"]])
+        writer.writerow([r["id"],r["source"],r["tx_type"],r["type_bien"],r["zone"],r["quartier"],r["prix"],r["prix_fcfa"],r["surface"],r["pieces"],r["contact"],r["description"],r["url"],r["scraped_at"]])
     return Response(si.getvalue(), mimetype="text/csv", headers={"Content-Disposition":"attachment;filename=immo-ci.csv"})
 
 if __name__ == "__main__":
