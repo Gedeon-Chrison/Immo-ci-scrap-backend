@@ -43,25 +43,25 @@ def extract_price(text):
     if not text: return 0, ""
     clean = re.sub(r"[^\d]", "", text)
     val = int(clean) if clean else 0
-    if "million" in text.lower(): val *= 1_000_000
-    elif val > 0 and val < 1000 and "000" not in text: val *= 1_000
+    if "million" in text.lower(): val *= 1000000
+    elif val > 0 and val < 1000 and "000" not in text: val *= 1000
     return val, text.strip()
 
-def detect_transaction(text, url=""):
+def detect_tx(text, url=""):
     t = (text + " " + url).lower()
-    if any(w in t for w in ["vente","à vendre","achat","acheter"]): return "Vente"
-    if any(w in t for w in ["location","louer","à louer","loyer"]): return "Location"
+    if any(w in t for w in ["vente","a vendre","achat","acheter"]): return "Vente"
+    if any(w in t for w in ["location","louer","a louer","loyer"]): return "Location"
     return "Vente"
 
 def detect_type(text):
     t = text.lower()
-    types = [("Villa",["villa"]),("Appartement",["appartement","appart"]),("Studio",["studio"]),("Duplex",["duplex"]),("Terrain",["terrain","parcelle"]),("Immeuble",["immeuble"]),("Bureau",["bureau"]),("Local commercial",["local commercial","boutique"]),("Magasin",["magasin"]),("Entrepôt",["entrepôt","hangar"]),("Chambre",["chambre"]),("Maison",["maison"])]
+    types = [("Villa",["villa"]),("Appartement",["appartement","appart"]),("Studio",["studio"]),("Duplex",["duplex"]),("Terrain",["terrain","parcelle"]),("Immeuble",["immeuble"]),("Bureau",["bureau"]),("Local commercial",["local commercial","boutique"]),("Magasin",["magasin"]),("Entrepot",["entrepot","hangar"]),("Chambre",["chambre"]),("Maison",["maison"])]
     for typ, kws in types:
         if any(kw in t for kw in kws): return typ
     return "Appartement"
 
 def detect_zone(text):
-    ZONES = {"Cocody":["cocody"],"Riviera Golf":["riviera golf","golf"],"Riviera":["riviera"],"2 Plateaux":["2 plateaux","deux plateaux"],"Angré":["angré","angre"],"Marcory":["marcory"],"Zone 4":["zone 4","zone4"],"Biétry":["biétry","bietry"],"Plateau":["plateau"],"Treichville":["treichville"],"Yopougon":["yopougon"],"Koumassi":["koumassi"],"Adjamé":["adjamé","adjame"],"Abobo":["abobo"],"Bingerville":["bingerville"],"Grand-Bassam":["bassam"],"Djibi":["djibi"],"Palmeraie":["palmeraie"]}
+    ZONES = {"Cocody":["cocody"],"Riviera Golf":["riviera golf","golf"],"Riviera":["riviera"],"2 Plateaux":["2 plateaux","deux plateaux"],"Angre":["angre"],"Marcory":["marcory"],"Zone 4":["zone 4","zone4"],"Bietry":["bietry"],"Plateau":["plateau"],"Treichville":["treichville"],"Yopougon":["yopougon"],"Koumassi":["koumassi"],"Adjame":["adjame"],"Abobo":["abobo"],"Bingerville":["bingerville"],"Grand-Bassam":["bassam"],"Djibi":["djibi"],"Palmeraie":["palmeraie"]}
     t = text.lower()
     for zone, kws in ZONES.items():
         if any(kw in t for kw in kws): return zone
@@ -79,21 +79,6 @@ def fetch_page(url, timeout=20):
     except Exception as e:
         _log(f"Erreur fetch {url}: {e}", "err")
         return None
-
-def fetch_page_playwright(url):
-    try:
-        from playwright.sync_api import sync_playwright
-        with sync_playwright() as p:
-            browser = p.chromium.launch(headless=True, args=["--no-sandbox"])
-            page = browser.new_page(extra_http_headers={"User-Agent": HEADERS["User-Agent"]})
-            page.goto(url, timeout=30000, wait_until="domcontentloaded")
-            time.sleep(2)
-            html = page.content()
-            browser.close()
-            return html
-    except Exception as e:
-        _log(f"Playwright erreur: {e}", "err")
-        return fetch_page(url)
 
 def parse_annonces(html, source, config):
     if not html: return []
@@ -144,21 +129,41 @@ def parse_annonces(html, source, config):
             if not desc: desc = title
             full = f"{title} {loc_txt} {desc} {link}"
             zone = detect_zone(f"{loc_txt} {title}")
-            transaction = detect_transaction(full)
+            tx = detect_tx(full)
             type_bien = detect_type(full)
             prix_fcfa, prix_display = extract_price(prix_txt)
             zones_ok = not config["zones"] or any(z.lower() in zone.lower() for z in config["zones"])
             if not zones_ok: continue
-            if transaction == "Location" and prix_fcfa > 0 and prix_fcfa < config["min_loyer"]: continue
-            if transaction == "Vente" and prix_fcfa > 0 and prix_fcfa < config["min_vente"]: continue
-            surface_m = re.search(r"(\d+)\s*m[²2]", full, re.IGNORECASE)
-            surface = surface_m.group(1) + "m²" if surface_m else ""
-            pieces_m = re.search(r"(\d+)\s*(pièces?|chambres?)", full, re.IGNORECASE)
+            if tx == "Location" and prix_fcfa > 0 and prix_fcfa < config["min_loyer"]: continue
+            if tx == "Vente" and prix_fcfa > 0 and prix_fcfa < config["min_vente"]: continue
+            surface_m = re.search(r"(\d+)\s*m[2]", full, re.IGNORECASE)
+            surface = surface_m.group(1) + "m2" if surface_m else ""
+            pieces_m = re.search(r"(\d+)\s*(pieces?|chambres?)", full, re.IGNORECASE)
             pieces = pieces_m.group(1) if pieces_m else ""
             phone_m = re.search(r"(\+?225\s?[\d\s]{8,14}|07\s?\d{2}\s?\d{2}\s?\d{2})", full)
             contact = phone_m.group(0).strip() if phone_m else ""
             if not title or len(title) < 5: continue
-            annonces.append({"id":make_id(link,title),"source":source["name"],"source_url":source["base"],"transaction":transaction,"type_bien":type_bien,"zone":zone,"quartier":loc_txt[:100] if loc_txt else zone,"prix":prix_display or "Prix NC","prix_fcfa":prix_fcfa,"surface":surface,"pieces":pieces,"contact":contact,"agence":source["name"],"description":desc,"url":link,"photos":json.dumps(photos[:6]),"publie_at":datetime.now().isoformat(),"scraped_at":datetime.now().isoformat(),"is_new":1})
+            annonces.append({
+                "id": make_id(link, title),
+                "source": source["name"],
+                "source_url": source["base"],
+                "tx_type": tx,
+                "type_bien": type_bien,
+                "zone": zone,
+                "quartier": loc_txt[:100] if loc_txt else zone,
+                "prix": prix_display or "Prix NC",
+                "prix_fcfa": prix_fcfa,
+                "surface": surface,
+                "pieces": pieces,
+                "contact": contact,
+                "agence": source["name"],
+                "description": desc,
+                "url": link,
+                "photos": json.dumps(photos[:6]),
+                "publie_at": datetime.now().isoformat(),
+                "scraped_at": datetime.now().isoformat(),
+                "is_new": 1,
+            })
         except: continue
     return annonces
 
@@ -168,10 +173,12 @@ def save_annonces(db_path, annonces):
     saved = 0
     for a in annonces:
         try:
-            conn.execute("INSERT OR REPLACE INTO annonces (id,source,source_url,transaction,type_bien,zone,quartier,prix,prix_fcfa,surface,pieces,contact,agence,description,url,photos,publie_at,scraped_at,is_new) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",(a["id"],a["source"],a["source_url"],a["transaction"],a["type_bien"],a["zone"],a["quartier"],a["prix"],a["prix_fcfa"],a["surface"],a["pieces"],a["contact"],a["agence"],a["description"],a["url"],a["photos"],a["publie_at"],a["scraped_at"],a["is_new"]))
+            conn.execute("INSERT OR REPLACE INTO annonces (id,source,source_url,tx_type,type_bien,zone,quartier,prix,prix_fcfa,surface,pieces,contact,agence,description,url,photos,publie_at,scraped_at,is_new) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                (a["id"],a["source"],a["source_url"],a["tx_type"],a["type_bien"],a["zone"],a["quartier"],a["prix"],a["prix_fcfa"],a["surface"],a["pieces"],a["contact"],a["agence"],a["description"],a["url"],a["photos"],a["publie_at"],a["scraped_at"],a["is_new"]))
             saved += 1
         except: pass
-    conn.commit(); conn.close()
+    conn.commit()
+    conn.close()
     return saved
 
 def run_scrape(db_path, config):
@@ -182,10 +189,11 @@ def run_scrape(db_path, config):
         sources_to_run = [s for s in SOURCES if s["id"] in config["sources"]]
     total_src = len(sources_to_run)
     total_annonces = 0
-    _log(f"Démarrage — {total_src} sources | zones: {config['zones'][:3]}", "info")
+    _log(f"Demarrage - {total_src} sources", "info")
     conn = sqlite3.connect(db_path)
     conn.execute("UPDATE annonces SET is_new=0")
-    conn.commit(); conn.close()
+    conn.commit()
+    conn.close()
     for i, source in enumerate(sources_to_run):
         _status["current"] = source["name"]
         _status["progress"] = int((i / total_src) * 100)
@@ -193,18 +201,19 @@ def run_scrape(db_path, config):
         src_count = 0
         for url in source["urls"]:
             html = fetch_page(url)
-            if not html: html = fetch_page_playwright(url)
             annonces = parse_annonces(html, source, config)
             saved = save_annonces(db_path, annonces)
             src_count += saved
-            _log(f"  {saved} annonces sauvegardées", "ok")
-            time.sleep(1.5)
+            _log(f"  {saved} annonces sauvegardees", "ok")
+            time.sleep(1)
         total_annonces += src_count
         _status["done"] = i + 1
     _status["running"] = False
     _status["progress"] = 100
     _status["current"] = ""
-    _log(f"Terminé — {total_annonces} annonces collectées", "ok")
+    _log(f"Termine - {total_annonces} annonces", "ok")
     conn = sqlite3.connect(db_path)
-    conn.execute("INSERT INTO scrape_jobs (started_at,finished_at,status,total,config) VALUES (?,?,?,?,?)",(datetime.now().isoformat(),datetime.now().isoformat(),"done",total_annonces,json.dumps(config)))
-    conn.commit(); conn.close()
+    conn.execute("INSERT INTO scrape_jobs (started_at,finished_at,status,total,config) VALUES (?,?,?,?,?)",
+        (datetime.now().isoformat(),datetime.now().isoformat(),"done",total_annonces,json.dumps(config)))
+    conn.commit()
+    conn.close()
