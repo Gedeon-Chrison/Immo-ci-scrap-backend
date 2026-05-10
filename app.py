@@ -6,7 +6,8 @@ from scraper import run_scrape, get_status
 
 app = Flask(__name__)
 CORS(app)
-DB_PATH = os.environ.get("DB_PATH", "immo.db")
+DB_PATH = os.environ.get("DB_PATH", "/tmp/immo.db")
+
 
 def init_db():
     conn = sqlite3.connect(DB_PATH)
