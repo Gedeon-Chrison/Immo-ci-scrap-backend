@@ -1,0 +1,16 @@
+services:
+  - type: web
+    name: immo-ci-api
+    env: python
+    buildCommand: |
+      pip install -r requirements.txt
+      playwright install chromium
+      playwright install-deps chromium
+    startCommand: gunicorn app:app --bind 0.0.0.0:$PORT --workers 2 --timeout 120
+    envVars:
+      - key: DB_PATH
+        value: /var/data/immo.db
+    disk:
+      name: immo-data
+      mountPath: /var/data
+      sizeGB: 1
